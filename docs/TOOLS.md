@@ -48,9 +48,9 @@ Performance metrics for one media item.
 Account-level reach, profile activity, and audience metrics.
 
 - **Input**: `period` (`day` | `week` | `days_28`, default `day`), `response_format`
-- **Output**: `metrics` (e.g. `reach`, `profile_views`, `accounts_engaged`, `total_interactions`, `follower_count`, `website_clicks`), `unavailable_metrics`
+- **Output**: `metrics` (e.g. `reach`, `views`, `profile_activity`, `accounts_engaged`, `total_interactions`, `follower_count`, `online_followers`, `get_directions_clicks`), `unavailable_metrics`
 - **Permissions**: `instagram_manage_insights`
-- **Notes**: Some audience/demographic metrics require a minimum follower count (historically 100) — those show up under `unavailable_metrics` if the account doesn't qualify. Meta's account-insights metric set changes relatively often; check `unavailable_metrics` rather than assuming a metric exists.
+- **Notes**: Some audience/demographic metrics require a minimum follower count (historically 100) — those show up under `unavailable_metrics` if the account doesn't qualify. Meta's account-insights metric set changes relatively often — as of this writing, `profile_views`, `website_clicks`, `phone_call_clicks`, `text_message_clicks`, and standalone `email_contacts` are deprecated (retired January 2025) in favor of the `profile_activity` breakdown and `views`; check `unavailable_metrics` rather than assuming any specific metric exists.
 
 ## `instagram_list_comments`
 

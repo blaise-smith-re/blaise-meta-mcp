@@ -61,6 +61,12 @@ Every V1 tool is read-only. Here's exactly what each needs:
 
 Add all of these to your Login Configuration (Step 4.3) or, if your dashboard instead lets you request them per-product under **Instagram → API Setup**, add them there.
 
+### A note on permission naming
+
+If you search around or watch tutorials, you may see a _different_ set of Instagram permission names with a `instagram_business_` prefix (e.g. `instagram_business_basic`, `instagram_business_manage_comments`). **Those are not a newer version of the permissions in the table above — they belong to a different Meta login flow** ("Instagram API with Instagram Login," for Instagram accounts that are _not_ linked to a Facebook Page). Meta renamed that flow's permissions in January 2025; the permissions in the table above belong to "Instagram API with Facebook Login for Business" (the flow this server uses, because your Instagram account is linked to a Facebook Page) and were not part of that rename. If the App Dashboard's permission picker ever shows you both families, use the plain names from the table above, not the `instagram_business_*` ones.
+
+(This project's own research access to Meta's live documentation was network-restricted while writing this guide, so this is based on cross-referencing several independent, dated third-party developer sources rather than a single authoritative page — if the App Dashboard's permission picker shows something that doesn't match this table when you get there, trust the Dashboard and let that override this doc.)
+
 ### Do you need App Review?
 
 **No — not for this v1 setup.** App Review (and the "Advanced Access" tier it grants) is only required when your app will be used by Instagram/Facebook accounts you don't own or manage — i.e. other businesses installing your app. Since this server only ever accesses **your own** Page and Instagram account, and you are an admin/developer on the app itself, Meta grants **Standard Access** automatically, and the app can stay in **Development Mode** indefinitely.

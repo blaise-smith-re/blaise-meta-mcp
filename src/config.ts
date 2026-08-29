@@ -42,8 +42,39 @@ const ConfigSchema = z
     PORT: z.coerce.number().int().positive().default(3000),
     HOST: z.string().default("127.0.0.1"),
 
-    // Remote HTTP transport auth: a bearer token clients must present.
-    // Required whenever TRANSPORT=http so the server is never exposed unauthenticated.
+    // The externally reachable base URL of this deployment (e.g.
+    // https://blaise-meta-mcp.onrender.com), required when TRANSPORT=http.
+    // This is the OAuth issuer/resource identifier — see docs/SECURITY.md
+    // for why this server implements OAuth at all. Must be HTTPS unless the
+    // host is localhost/127.0.0.1 (for local testing).
+    PUBLIC_URL: z
+      .string()
+      .url()
+      .optional()
+      .refine(
+        (url) =>
+          !url ||
+          url.startsWith("https://") ||
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(url),
+        {
+          message:
+            "PUBLIC_URL must use https:// (http:// is only allowed for localhost/127.0.0.1 during local testing)",
+        },
+      ),
+
+    // The single password that gates this server's OAuth login screen.
+    // Required when TRANSPORT=http. This is the credential Blaise enters
+    // once, in the browser, when Claude's "Add custom connector" flow
+    // redirects him here to authorize — see docs/SECURITY.md.
+    OAUTH_OWNER_PASSWORD: z.string().min(12).optional(),
+
+    // Legacy/optional: a static bearer token accepted as an alternative to
+    // an OAuth-issued access token on /mcp. NOT usable with the claude.ai or
+    // Claude Desktop "Add custom connector" UI (which only supports OAuth) —
+    // this exists solely for clients that let you set a raw Authorization
+    // header yourself, e.g. Claude Desktop's local JSON config file or the
+    // MCP Inspector during development. Leave unset unless you specifically
+    // need that path; OAuth is the primary and recommended mechanism.
     MCP_SERVER_AUTH_TOKEN: z.string().min(16).optional(),
 
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -58,12 +89,20 @@ const ConfigSchema = z
     ALLOW_MESSAGE_REPLIES: boolFromEnv,
   })
   .superRefine((val, ctx) => {
-    if (val.TRANSPORT === "http" && !val.MCP_SERVER_AUTH_TOKEN) {
+    if (val.TRANSPORT === "http" && !val.PUBLIC_URL) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["MCP_SERVER_AUTH_TOKEN"],
+        path: ["PUBLIC_URL"],
         message:
-          "MCP_SERVER_AUTH_TOKEN is required when TRANSPORT=http — a remote server must not accept unauthenticated connections.",
+          "PUBLIC_URL is required when TRANSPORT=http — the OAuth authorization server needs a stable, externally reachable issuer URL.",
+      });
+    }
+    if (val.TRANSPORT === "http" && !val.OAUTH_OWNER_PASSWORD) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OAUTH_OWNER_PASSWORD"],
+        message:
+          "OAUTH_OWNER_PASSWORD is required when TRANSPORT=http — a remote server must not accept unauthenticated connections, and this password gates the OAuth login screen.",
       });
     }
   });
@@ -78,6 +117,8 @@ export type AppConfig = {
   transport: "stdio" | "http";
   port: number;
   host: string;
+  publicUrl?: string;
+  oauthOwnerPassword?: string;
   mcpServerAuthToken?: string;
   logLevel: "debug" | "info" | "warn" | "error";
   writeActions: {
@@ -122,6 +163,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     transport: env.TRANSPORT,
     port: env.PORT,
     host: env.HOST,
+    publicUrl: env.PUBLIC_URL,
+    oauthOwnerPassword: env.OAUTH_OWNER_PASSWORD,
     mcpServerAuthToken: env.MCP_SERVER_AUTH_TOKEN,
     logLevel: env.LOG_LEVEL,
     writeActions: {
@@ -136,7 +179,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
 
 /** Every secret value that must never appear verbatim in logs or error output. */
 export function secretsOf(config: AppConfig): string[] {
-  return [config.metaPageAccessToken, config.metaAppSecret, config.mcpServerAuthToken].filter(
-    (v): v is string => Boolean(v),
-  );
+  return [
+    config.metaPageAccessToken,
+    config.metaAppSecret,
+    config.oauthOwnerPassword,
+    config.mcpServerAuthToken,
+  ].filter((v): v is string => Boolean(v));
 }

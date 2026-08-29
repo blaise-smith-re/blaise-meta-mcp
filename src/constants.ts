@@ -3,9 +3,10 @@
  * 6 months and supports each for ~2 years. Check
  * https://developers.facebook.com/docs/graph-api/changelog for the current
  * version and override with the GRAPH_API_VERSION env var as needed — do not
- * assume this constant stays current.
+ * assume this constant stays current. (v26.0 as of August 2026; v25.0 is the
+ * prior version and remains supported if v26.0 turns out to need a rollback.)
  */
-export const DEFAULT_GRAPH_API_VERSION = "v25.0";
+export const DEFAULT_GRAPH_API_VERSION = "v26.0";
 
 export const GRAPH_API_BASE_URL = "https://graph.facebook.com";
 
@@ -44,22 +45,24 @@ export const CANDIDATE_MEDIA_INSIGHTS_METRICS = [
   "total_interactions",
   "views",
   "profile_activity",
-  "profile_visits",
   "follows",
 ];
 
+// profile_views, website_clicks, phone_call_clicks, text_message_clicks, and
+// email_contacts (as standalone time-series metrics) were deprecated by Meta
+// on January 8, 2025 in favor of the profile_activity breakdown below and
+// the views metric. They're deliberately NOT in this list — an insights tool
+// requesting them would just get them reported back as unavailable, but
+// there's no reason to request metrics known to be retired.
 export const CANDIDATE_ACCOUNT_INSIGHTS_METRICS = [
   "reach",
-  "profile_views",
-  "website_clicks",
+  "views",
+  "profile_activity",
   "accounts_engaged",
   "total_interactions",
   "follower_count",
   "online_followers",
-  "email_contacts",
   "get_directions_clicks",
-  "phone_call_clicks",
-  "text_message_clicks",
 ];
 
 export const CANDIDATE_POST_INSIGHTS_METRICS = [

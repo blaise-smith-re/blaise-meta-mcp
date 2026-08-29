@@ -57,7 +57,7 @@ Full detail on inputs/outputs/permissions for each: [docs/TOOLS.md](docs/TOOLS.m
    You should see `blaise-meta-mcp-server v0.1.0 running via stdio` with no errors. Press Ctrl+C to stop it.
 7. **Connect it to Claude.**
    - **Local use (Claude Desktop / Claude Code):** point it at `TRANSPORT=stdio` (the default) and add this server to your MCP client config, running `node dist/index.js` from this folder with the `.env` values loaded.
-   - **Remote use (a custom connector Claude reaches over the internet):** deploy this project to a Node.js host (Render, Fly.io, Railway, a small VPS — anywhere that can run a long-lived Node process and holds environment variables as secrets, never in code). Set `TRANSPORT=http`, set every value from `.env` as an environment variable on that host, and set `MCP_SERVER_AUTH_TOKEN` to a long random secret (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Then in Claude's custom connector settings, add the server's `https://your-domain/mcp` URL with that same token as the Bearer credential.
+   - **Remote use (Claude's "Add custom connector" on claude.ai or Claude Desktop):** deploy this project to a Node.js host (Render, Fly.io, Railway, a small VPS — anywhere that can run a long-lived Node process, terminate HTTPS, and hold environment variables as secrets, never in code). Set `TRANSPORT=http`, `PUBLIC_URL` to that host's HTTPS URL, and `OAUTH_OWNER_PASSWORD` to a long random passphrase (`node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`) — see `.env.example`. Then in Claude's connector settings, click **Add custom connector**, paste `https://your-domain/mcp` as the server URL, and click through — Claude discovers this server's built-in OAuth automatically and will redirect you to a password prompt (that's `OAUTH_OWNER_PASSWORD`) the first time. **Why OAuth and not a simple pasted token**: Claude's own "Add custom connector" screen for individual accounts only has fields for a server URL and (optionally) OAuth client credentials — there is no field to paste in a static API key or bearer token. A remote MCP server has to speak OAuth to be addable there at all. See [docs/SECURITY.md](docs/SECURITY.md#claude-connector-authentication) for the full research this is based on.
 
 ## Keeping the token working
 
@@ -71,12 +71,18 @@ src/
   server.ts            builds the MCP server and registers tools
   config.ts             typed, validated environment configuration
   logger.ts             stderr logger with automatic secret redaction
+  security.ts            constant-time comparison helper
   constants.ts           shared constants, candidate insights metrics
   meta/
     client.ts            the one place that calls the Graph API
     errors.ts             typed Graph API error handling
     account.ts             resolves the connected Page + Instagram account
     writeGuard.ts           gate for the (disabled) future write layer
+  oauth/                  this server's own OAuth 2.1 auth server, for
+                          Claude's connector auth (see docs/SECURITY.md)
+    store.ts               in-memory clients/codes/tokens store
+    provider.ts             implements the MCP SDK's OAuthServerProvider
+    loginRouter.ts           the one-password login screen
   tools/                  one file per MCP tool
     write/                 architected-but-disabled future write tools
 scripts/

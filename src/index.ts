@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 import "dotenv/config";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, { type Request, type Response } from "express";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import {
+  mcpAuthRouter,
+  getOAuthProtectedResourceMetadataUrl,
+} from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { ConfigValidationError, loadConfig } from "./config.js";
 import { registerSecrets } from "./logger.js";
 import { logger } from "./logger.js";
 import { createServer, SERVER_NAME, SERVER_VERSION } from "./server.js";
 import { secretsOf } from "./config.js";
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+import { CombinedTokenVerifier, SingleUserOAuthProvider } from "./oauth/provider.js";
+import { createLoginRouter } from "./oauth/loginRouter.js";
 
 async function runStdio(config: ReturnType<typeof loadConfig>): Promise<void> {
   const server = createServer(config);
@@ -26,6 +24,13 @@ async function runStdio(config: ReturnType<typeof loadConfig>): Promise<void> {
 }
 
 async function runHttp(config: ReturnType<typeof loadConfig>): Promise<void> {
+  // Config validation guarantees these are set whenever TRANSPORT=http.
+  const publicUrl = config.publicUrl!;
+  const resourceServerUrl = new URL("/mcp", publicUrl);
+
+  const oauthProvider = new SingleUserOAuthProvider(config);
+  const tokenVerifier = new CombinedTokenVerifier(oauthProvider, config.mcpServerAuthToken);
+
   const app = express();
   app.use(express.json());
 
@@ -33,19 +38,37 @@ async function runHttp(config: ReturnType<typeof loadConfig>): Promise<void> {
     res.status(200).json({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION });
   });
 
-  // Every /mcp request must present the configured bearer token. Config
-  // validation already guarantees MCP_SERVER_AUTH_TOKEN is set whenever
-  // TRANSPORT=http, so this server can never be reachable unauthenticated.
-  app.use("/mcp", (req: Request, res: Response, next: NextFunction) => {
-    const header = req.header("authorization") ?? "";
-    const presented = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-    if (!presented || !timingSafeEqual(presented, config.mcpServerAuthToken ?? "")) {
-      logger.warn("Rejected /mcp request with missing or invalid bearer token");
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    next();
-  });
+  // Installs /authorize, /token, /register, /.well-known/oauth-authorization-server,
+  // and /.well-known/oauth-protected-resource/mcp — the endpoints Claude's
+  // "Add custom connector" flow discovers and drives automatically. See
+  // docs/SECURITY.md#claude-connector-authentication for why this server
+  // implements OAuth at all rather than a simpler static token.
+  app.use(
+    mcpAuthRouter({
+      provider: oauthProvider,
+      issuerUrl: new URL(publicUrl),
+      resourceServerUrl,
+      resourceName: "Blaise Meta MCP",
+      scopesSupported: ["mcp"],
+    }),
+  );
+
+  // The password-prompt screen OAuthServerProvider.authorize() redirects to.
+  app.use(createLoginRouter(oauthProvider));
+
+  // Every /mcp request must present a valid Bearer token: either one issued
+  // by the OAuth flow above, or (only if explicitly configured) the legacy
+  // static MCP_SERVER_AUTH_TOKEN for non-OAuth clients. Config validation
+  // guarantees OAUTH_OWNER_PASSWORD is set whenever TRANSPORT=http, so this
+  // server can never be reachable unauthenticated.
+  app.use(
+    "/mcp",
+    requireBearerAuth({
+      verifier: tokenVerifier,
+      requiredScopes: ["mcp"],
+      resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceServerUrl),
+    }),
+  );
 
   app.post("/mcp", async (req: Request, res: Response) => {
     // A fresh server + transport per request keeps this stateless and
@@ -65,7 +88,7 @@ async function runHttp(config: ReturnType<typeof loadConfig>): Promise<void> {
 
   app.listen(config.port, config.host, () => {
     logger.info(
-      `${SERVER_NAME} v${SERVER_VERSION} listening on http://${config.host}:${config.port}/mcp`,
+      `${SERVER_NAME} v${SERVER_VERSION} listening on ${config.host}:${config.port} — public MCP endpoint: ${resourceServerUrl.href}`,
     );
   });
 }
