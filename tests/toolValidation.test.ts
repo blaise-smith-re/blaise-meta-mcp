@@ -3,6 +3,7 @@ import { InstagramListMediaInputSchema } from "../src/tools/instagramMedia.js";
 import { InstagramGetMediaInsightsInputSchema } from "../src/tools/instagramMediaInsights.js";
 import { InstagramListCommentsInputSchema } from "../src/tools/instagramComments.js";
 import { InstagramGetAccountInsightsInputSchema } from "../src/tools/instagramAccountInsights.js";
+import { InstagramGetMentionsInputSchema } from "../src/tools/instagramMentions.js";
 import { MetaGetAccountInputSchema } from "../src/tools/metaGetAccount.js";
 import { FacebookGetPostInsightsInputSchema } from "../src/tools/facebookPostInsights.js";
 
@@ -76,6 +77,31 @@ describe("instagram_get_account_insights input validation", () => {
     expect(InstagramGetAccountInsightsInputSchema.parse({ period: "days_28" }).period).toBe(
       "days_28",
     );
+  });
+});
+
+describe("instagram_get_mentions input validation", () => {
+  it("accepts an empty object — both lookup IDs are optional", () => {
+    const result = InstagramGetMentionsInputSchema.parse({});
+    expect(result.mentioned_media_id).toBeUndefined();
+    expect(result.mentioned_comment_id).toBeUndefined();
+  });
+
+  it("no longer accepts a limit field (tagged-media listing was removed)", () => {
+    expect(() => InstagramGetMentionsInputSchema.parse({ limit: 10 })).toThrow();
+  });
+
+  it("accepts mentioned_media_id and mentioned_comment_id independently", () => {
+    expect(
+      InstagramGetMentionsInputSchema.parse({ mentioned_media_id: "123" }).mentioned_media_id,
+    ).toBe("123");
+    expect(
+      InstagramGetMentionsInputSchema.parse({ mentioned_comment_id: "456" }).mentioned_comment_id,
+    ).toBe("456");
+  });
+
+  it("rejects unknown extra fields (strict schema)", () => {
+    expect(() => InstagramGetMentionsInputSchema.parse({ tags: true })).toThrow();
   });
 });
 

@@ -21,6 +21,8 @@ This server was re-architected around **"Instagram API with Instagram Login"** i
 - `src/meta/client.ts`'s `MetaGraphClient` was generalized to take an explicit `{baseUrl, accessToken, graphApiVersion}` rather than assuming one shared Page token, since the server now legitimately talks to two different Graph API hosts with two different token types (`src/tools/context.ts` carries both as `igClient` and an optional `fbClient`).
 - This correction does not touch Claude-to-server authentication (OAuth 2.1, below) at all — that is a completely separate system, unaffected by which Meta login flow is used underneath.
 
+**Follow-up correction**: a subsequent QC pass found that switching to Instagram Login was not entirely capability-neutral for Instagram itself. `instagram_get_mentions` originally also listed media where the account was photo/video-tagged by others, via `GET /{ig-user-id}/tags` — that edge is documented only under the Facebook-Login-for-Business Instagram Graph API reference, with no equivalent under Instagram Login. That call has been removed from the tool (it would have failed at runtime under this server's auth flow); the tool's @mention-resolution behavior (`mentioned_media`/`mentioned_comment`, both confirmed supported under Instagram Login) is unchanged. This is a genuine, permanent capability loss versus the Facebook Login flow — full detail and the tool-by-tool audit that surfaced it are in [TOOLS.md](TOOLS.md#instagram-login-capability-audit).
+
 ## No credentials in the repository
 
 - `.env` is git-ignored (`.gitignore`); only `.env.example` (no real values) is committed.

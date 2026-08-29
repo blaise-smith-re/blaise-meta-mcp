@@ -24,7 +24,7 @@ Claude  <--MCP-->  this server  <--Graph API-->  Meta (Instagram)
 | `instagram_get_media_insights`   | Reach, views, saves, shares, etc. for one post          |
 | `instagram_get_account_insights` | Account-level reach, profile activity, engaged accounts |
 | `instagram_list_comments`        | Comments on a specific Instagram post                   |
-| `instagram_get_mentions`         | Instagram tags, and specific @mention lookups           |
+| `instagram_get_mentions`         | Resolve a specific @mention (caption or comment) by ID  |
 
 Plus an **optional, disabled-by-default Facebook Page module** (`facebook_get_page`, `facebook_list_posts`, `facebook_get_post_insights`) for if Blaise ever creates and connects an actual Facebook Page — see [docs/META_SETUP.md#facebook-professional-mode](docs/META_SETUP.md#facebook-professional-mode) for why it's off by default (Meta's API doesn't support reading a Professional-Mode personal profile the way it supports a Page).
 

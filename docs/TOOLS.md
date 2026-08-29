@@ -63,12 +63,36 @@ Comments left on one Instagram media item.
 
 ## `instagram_get_mentions`
 
-Lists media where the account was tagged, and can resolve a specific @mention if you already know its ID.
+Resolves a specific @mention of the account in a caption or comment, when you already have its media/comment ID.
 
-- **Input**: `limit` (tagged-media list size), `mentioned_media_id` (optional), `mentioned_comment_id` (optional), `response_format`
-- **Output**: `tagged_media` (list, from `GET /{ig-user-id}/tags`), plus `resolved_media_mention` / `resolved_comment_mention` if the corresponding ID was passed
-- **Permissions**: `instagram_business_basic` (tags), `instagram_business_manage_comments` (comment mentions)
-- **Known Meta API limitation**: there is no Graph API endpoint that lists every @mention in a caption or comment historically — Meta only supports resolving one once you already know its media/comment ID, which in a full production setup normally comes from a real-time webhook subscription. Webhooks are out of scope for this read-only v1 (they require a public HTTPS endpoint and a review step of their own). This tool exposes what genuinely is listable (tags) and the specific-ID lookup, and says so plainly rather than pretending to offer a full mentions feed.
+- **Input**: `mentioned_media_id` (optional), `mentioned_comment_id` (optional), `response_format`
+- **Output**: `resolved_media_mention` / `resolved_comment_mention` for whichever ID(s) were passed. If neither is passed, returns an explanatory message and makes no API call at all.
+- **Permissions**: `instagram_business_basic` (caption mentions via `mentioned_media`), `instagram_business_manage_comments` (comment mentions via `mentioned_comment`)
+- **Known Meta API limitations**:
+  1. There is no Graph API endpoint that lists every @mention historically, under any Instagram auth flow — Meta only supports resolving one once you already know its media/comment ID, which in a full production setup normally comes from a real-time webhook subscription. Webhooks are out of scope for this read-only v1 (they require a public HTTPS endpoint and a review step of their own).
+  2. **This tool does NOT list media where the account was photo/video-tagged by others.** An earlier version of this tool also called `GET /{ig-user-id}/tags` for that; that edge is only documented under "Instagram API with Facebook Login for Business," which this server does not use, and has no equivalent under "Instagram API with Instagram Login," which this server does use. That call has been removed rather than left in to fail. **This is a real capability loss compared to the Facebook Login flow** — see the audit table below.
+
+## `instagram_get_mentions` — what changed and why
+
+An earlier version of this tool was named "Get Instagram Mentions and Tags" and additionally listed tagged media via `GET /{ig-user-id}/tags`. A follow-up QC pass found that endpoint is not supported under the Instagram Login flow this server uses (only under Facebook Login for Business), so it was removed rather than shipped as a call that would fail at runtime. The tool name was kept as `instagram_get_mentions` since, with tagging removed, it now accurately describes the tool's only remaining capability. Nothing else about this tool's permissions or behavior changed.
+
+**Capability lost vs. Facebook Login for Business**: listing media where Blaise's account was tagged by other users in a photo/video (as opposed to @mentioned in a caption or comment, which is still supported). There is no workaround for this under Instagram Login — it would require switching back to the Facebook-Login-for-Business flow, which in turn would require Blaise to have an actual Facebook Page (see [SECURITY.md](SECURITY.md#account-architecture-correction)).
+
+## Instagram Login capability audit
+
+Every active V1 Instagram tool, verified against "Instagram API with Instagram Login" (the flow this server uses — see [META_SETUP.md](META_SETUP.md)):
+
+| Tool                             | Endpoint                                                               | Host                  | Token type                  | Permission                                                        | Supported?       | Limitations                                                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------- | --------------------- | --------------------------- | ----------------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `meta_get_account`               | `GET /{ig-user-id}?fields=id,username,name,account_type`               | `graph.instagram.com` | Instagram User Access Token | `instagram_business_basic`                                        | ✅ Yes           | Profile/own-account reads work on either Instagram Login or Facebook Login.                                                   |
+| `instagram_get_profile`          | `GET /{ig-user-id}?fields=...`                                         | `graph.instagram.com` | Instagram User Access Token | `instagram_business_basic`                                        | ✅ Yes           | Some fields may be omitted depending on account type/privacy (handled — see tool notes above).                                |
+| `instagram_list_media`           | `GET /{ig-user-id}/media`                                              | `graph.instagram.com` | Instagram User Access Token | `instagram_business_basic`                                        | ✅ Yes           | None known beyond standard pagination.                                                                                        |
+| `instagram_get_media_insights`   | `GET /{media-id}/insights`                                             | `graph.instagram.com` | Instagram User Access Token | `instagram_business_manage_insights`                              | ✅ Yes           | Metric availability varies by media type/age — handled via dynamic fallback (see above).                                      |
+| `instagram_get_account_insights` | `GET /{ig-user-id}/insights`                                           | `graph.instagram.com` | Instagram User Access Token | `instagram_business_manage_insights`                              | ✅ Yes           | Same dynamic-fallback handling; some demographic metrics need a follower-count threshold.                                     |
+| `instagram_list_comments`        | `GET /{media-id}/comments`                                             | `graph.instagram.com` | Instagram User Access Token | `instagram_business_manage_comments`                              | ✅ Yes           | Read-only usage only; this server never posts/hides/deletes.                                                                  |
+| `instagram_get_mentions`         | `GET /{ig-user-id}?fields=mentioned_media...` / `mentioned_comment...` | `graph.instagram.com` | Instagram User Access Token | `instagram_business_basic` / `instagram_business_manage_comments` | ✅ Yes, narrowed | Single-ID lookup only, no list endpoint (true under any flow); **no tagged-media listing** (Facebook-Login-only — see above). |
+
+Not implemented in this server and confirmed Facebook-Login-only / not applicable to Instagram Login, for completeness: **Business Discovery** (looking up _other_ public accounts' data) and **hashtag search** are both Facebook-Login-exclusive and were never part of this server's scope (Blaise only ever queries his own account). **Tagged-media listing** (`/tags`) is the one capability this server used to reference that is genuinely Facebook-Login-only — see above.
 
 ## `facebook_get_page`, `facebook_list_posts`, `facebook_get_post_insights` — OPTIONAL MODULE, disabled by default
 

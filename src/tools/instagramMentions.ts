@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolContext } from "./context.js";
 import {
-  paginationFields,
   responseFormatField,
   textResult,
   withToolErrorHandling,
@@ -11,13 +10,24 @@ import {
 import { getIgUserId } from "../meta/account.js";
 import { GraphApiError } from "../meta/errors.js";
 
+/**
+ * NARROWED FROM THE ORIGINAL DESIGN: this tool used to also list media where
+ * the account was photo/video-tagged, via GET /{ig-user-id}/tags. That edge
+ * is only documented under the Facebook-Login-for-Business Instagram Graph
+ * API reference, not under "Instagram API with Instagram Login" (which this
+ * server now uses — see docs/META_SETUP.md) — Meta's Instagram Login docs
+ * do not expose a tagged-media listing endpoint, and there is no
+ * alternative endpoint that provides it under this auth flow. Calling it
+ * would fail. The /tags call has been removed entirely rather than left in
+ * to fail at runtime; see docs/TOOLS.md for exactly what capability this
+ * cost compared to the Facebook Login flow.
+ */
 export const InstagramGetMentionsInputSchema = z
   .object({
-    ...paginationFields,
     // Meta only exposes single-item lookups for @mentions in a caption or
     // comment (mentioned_media / mentioned_comment) — there is no "list all
-    // mentions" edge. These optional IDs typically come from a webhook
-    // notification payload Blaise has already received.
+    // mentions" edge under any Instagram auth flow. These IDs typically come
+    // from a webhook notification payload Blaise has already received.
     mentioned_media_id: z
       .string()
       .optional()
@@ -34,33 +44,25 @@ export const InstagramGetMentionsInputSchema = z
   })
   .strict();
 
-interface IgTaggedMedia {
-  id: string;
-  caption?: string;
-  media_type?: string;
-  permalink?: string;
-  timestamp?: string;
-  username?: string;
-}
-
 export function registerInstagramGetMentions(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     "instagram_get_mentions",
     {
-      title: "Get Instagram Mentions and Tags",
-      description: `List Instagram media where the connected account has been tagged by other users (photo/video tags via GET /{ig-user-id}/tags), and optionally resolve a specific @mention in a caption or comment when you already have its media/comment ID.
+      title: "Get Instagram Mentions",
+      description: `Resolve a specific @mention of the connected account in an Instagram caption or comment, when you already have its media or comment ID.
 
 Args:
-  - limit (number): Max tagged media items to return, 1-100 (default: 25)
   - mentioned_media_id (string, optional): Look up a caption @mention on a specific media ID
   - mentioned_comment_id (string, optional): Look up a comment @mention on a specific comment ID
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
-Returns: A list of tagged media (id, caption, media_type, permalink, timestamp, tagging username), plus the resolved @mention details if mentioned_media_id or mentioned_comment_id was provided.
+Returns: resolved_media_mention / resolved_comment_mention for whichever ID(s) were passed. If neither is passed, returns an explanatory message rather than a list — see the limitation below.
 
-IMPORTANT LIMITATION (this is a Meta API constraint, not a bug): the Graph API has no endpoint that lists every caption/comment @mention historically. Meta only supports resolving a specific @mention once you already know its media or comment ID — in production that ID normally comes from a real-time webhook subscription (out of scope for this read-only v1 server; see docs/TOOLS.md). This tool lists what IS listable (tags) and resolves specific mentions on request.
+IMPORTANT LIMITATIONS (Meta API constraints, not bugs):
+1. There is no Graph API endpoint that lists every @mention historically, under any Instagram auth flow. Meta only supports resolving one once you already know its media/comment ID, which in a full production setup normally comes from a real-time webhook subscription (out of scope for this read-only v1 server).
+2. This tool does NOT list media where the account was photo/video-tagged by others. That capability (the /tags edge) is only available through "Instagram API with Facebook Login for Business", which this server does not use (Blaise's account has no linked Facebook Page — see docs/META_SETUP.md). It is not available through "Instagram API with Instagram Login", which this server does use, and there is no equivalent endpoint under that flow. This is a real capability gap versus the Facebook Login flow, not something this tool works around.
 
-Requires the instagram_business_manage_comments permission for comment mentions and instagram_business_basic for tags/media mentions.`,
+Requires the instagram_business_manage_comments permission for comment mentions and instagram_business_basic for caption/media mentions.`,
       inputSchema: InstagramGetMentionsInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -71,12 +73,19 @@ Requires the instagram_business_manage_comments permission for comment mentions 
     },
     withToolErrorHandling(
       async (params: z.infer<typeof InstagramGetMentionsInputSchema>): Promise<ToolResult> => {
-        const igUserId = getIgUserId(ctx.config);
+        if (!params.mentioned_media_id && !params.mentioned_comment_id) {
+          const message =
+            "No mentioned_media_id or mentioned_comment_id was provided. Meta's API has no endpoint " +
+            "that lists all @mentions — pass a specific media or comment ID (typically from a webhook " +
+            "notification) to resolve one.";
+          return textResult(message, {
+            resolved_media_mention: null,
+            resolved_comment_mention: null,
+            lookup_errors: [],
+          });
+        }
 
-        const tagged = await ctx.igClient.get<{ data: IgTaggedMedia[] }>(`${igUserId}/tags`, {
-          fields: "id,caption,media_type,permalink,timestamp,username",
-          limit: params.limit,
-        });
+        const igUserId = getIgUserId(ctx.config);
 
         let resolvedMediaMention: unknown;
         let resolvedCommentMention: unknown;
@@ -107,7 +116,6 @@ Requires the instagram_business_manage_comments permission for comment mentions 
         }
 
         const structured = {
-          tagged_media: tagged.data ?? [],
           resolved_media_mention: resolvedMediaMention ?? null,
           resolved_comment_mention: resolvedCommentMention ?? null,
           lookup_errors: lookupErrors,
@@ -117,23 +125,9 @@ Requires the instagram_business_manage_comments permission for comment mentions 
           return textResult(JSON.stringify(structured, null, 2), structured);
         }
 
-        const lines = [
-          `# Instagram Tags & Mentions`,
-          "",
-          `## Tagged Media (${structured.tagged_media.length})`,
-        ];
-        if (!structured.tagged_media.length) {
-          lines.push("_None found._");
-        } else {
-          for (const m of structured.tagged_media) {
-            lines.push(
-              `- **${m.media_type ?? "MEDIA"}** by @${m.username ?? "unknown"} (${m.id}) — ${m.permalink ?? ""}`,
-            );
-          }
-        }
+        const lines = [`# Instagram Mentions`, ""];
         if (resolvedMediaMention) {
           lines.push(
-            "",
             "## Resolved Caption Mention",
             "```json",
             JSON.stringify(resolvedMediaMention, null, 2),
@@ -142,7 +136,6 @@ Requires the instagram_business_manage_comments permission for comment mentions 
         }
         if (resolvedCommentMention) {
           lines.push(
-            "",
             "## Resolved Comment Mention",
             "```json",
             JSON.stringify(resolvedCommentMention, null, 2),
@@ -151,6 +144,9 @@ Requires the instagram_business_manage_comments permission for comment mentions 
         }
         if (lookupErrors.length) {
           lines.push("", "## Lookup Errors", ...lookupErrors.map((e) => `- ${e}`));
+        }
+        if (!resolvedMediaMention && !resolvedCommentMention && !lookupErrors.length) {
+          lines.push("_No mention resolved._");
         }
 
         return textResult(lines.join("\n"), structured);
