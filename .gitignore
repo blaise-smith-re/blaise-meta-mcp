@@ -1,0 +1,26 @@
+# Secrets - never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Test / coverage
+coverage/
+
+# Token cache written by the local authorize script (never commit tokens)
+.tokens.json
