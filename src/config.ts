@@ -13,18 +13,22 @@ const boolFromEnv = z
 
 const ConfigSchema = z
   .object({
-    // Core Meta credentials. A long-lived Page Access Token is the only token
-    // this server needs at runtime for every V1 (read-only) tool: Instagram
-    // Professional accounts connected via "Facebook Login for Business" are
-    // read and written through their linked Facebook Page's access token.
-    META_PAGE_ACCESS_TOKEN: z
+    // Core Meta credentials: a long-lived Instagram User Access Token for
+    // Blaise's Instagram Professional account, obtained via "Instagram API
+    // with Instagram Login" — no Facebook Page is involved (see
+    // docs/META_SETUP.md for why this account-architecture choice, not
+    // Facebook Login for Business, is what actually matches Blaise's
+    // account). Every Instagram tool calls graph.instagram.com with this
+    // token.
+    META_IG_ACCESS_TOKEN: z
       .string()
-      .min(20, "META_PAGE_ACCESS_TOKEN looks too short to be a real token"),
-    META_PAGE_ID: z.string().min(1, "META_PAGE_ID is required"),
+      .min(20, "META_IG_ACCESS_TOKEN looks too short to be a real token"),
 
-    // Optional: if not set, the server resolves the linked Instagram Business
-    // Account ID from META_PAGE_ID on first use and caches it in memory.
-    META_IG_USER_ID: z.string().min(1).optional(),
+    // The numeric Instagram Business Account ID. Meta returns this directly
+    // in the OAuth token-exchange response (as `user_id`) — there is no
+    // Page to traverse to discover it, so this is required rather than
+    // auto-resolved.
+    META_IG_USER_ID: z.string().min(1, "META_IG_USER_ID is required"),
 
     // Only needed for the local token-authorization helper script
     // (npm run token:authorize) and for future long-lived token refreshes.
@@ -36,6 +40,18 @@ const ConfigSchema = z
       .string()
       .regex(/^v\d+\.\d+$/)
       .default(DEFAULT_GRAPH_API_VERSION),
+
+    // --- Optional Facebook Page module (disabled by default) ---
+    // Blaise currently has a personal Facebook profile in Professional
+    // Mode, not a separate Facebook Page — and Meta's Graph API has no
+    // supported way to read posts/insights from a Professional-Mode
+    // profile (Page-level access has been Page-only since 2018; see
+    // docs/META_SETUP.md#facebook-professional-mode). These tools stay
+    // registered but inert unless Blaise later creates/connects an actual
+    // Page and opts in here.
+    ENABLE_FACEBOOK_PAGE_MODULE: boolFromEnv,
+    META_PAGE_ACCESS_TOKEN: z.string().min(20).optional(),
+    META_PAGE_ID: z.string().min(1).optional(),
 
     // Transport
     TRANSPORT: z.enum(["stdio", "http"]).default("stdio"),
@@ -65,7 +81,8 @@ const ConfigSchema = z
     // The single password that gates this server's OAuth login screen.
     // Required when TRANSPORT=http. This is the credential Blaise enters
     // once, in the browser, when Claude's "Add custom connector" flow
-    // redirects him here to authorize — see docs/SECURITY.md.
+    // redirects him here to authorize — see docs/SECURITY.md. Unrelated to
+    // any Meta/Facebook/Instagram credential above.
     OAUTH_OWNER_PASSWORD: z.string().min(12).optional(),
 
     // Legacy/optional: a static bearer token accepted as an alternative to
@@ -105,12 +122,26 @@ const ConfigSchema = z
           "OAUTH_OWNER_PASSWORD is required when TRANSPORT=http — a remote server must not accept unauthenticated connections, and this password gates the OAuth login screen.",
       });
     }
+    const facebookPageModuleEnabled = val.ENABLE_FACEBOOK_PAGE_MODULE ?? false;
+    if (facebookPageModuleEnabled && !val.META_PAGE_ACCESS_TOKEN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["META_PAGE_ACCESS_TOKEN"],
+        message: "META_PAGE_ACCESS_TOKEN is required when ENABLE_FACEBOOK_PAGE_MODULE=true.",
+      });
+    }
+    if (facebookPageModuleEnabled && !val.META_PAGE_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["META_PAGE_ID"],
+        message: "META_PAGE_ID is required when ENABLE_FACEBOOK_PAGE_MODULE=true.",
+      });
+    }
   });
 
 export type AppConfig = {
-  metaPageAccessToken: string;
-  metaPageId: string;
-  metaIgUserId?: string;
+  metaIgAccessToken: string;
+  metaIgUserId: string;
   metaAppId?: string;
   metaAppSecret?: string;
   graphApiVersion: string;
@@ -121,6 +152,11 @@ export type AppConfig = {
   oauthOwnerPassword?: string;
   mcpServerAuthToken?: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  facebookPage: {
+    enabled: boolean;
+    pageAccessToken?: string;
+    pageId?: string;
+  };
   writeActions: {
     enabled: boolean;
     allowInstagramPublish: boolean;
@@ -154,8 +190,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   const env = result.data;
 
   return {
-    metaPageAccessToken: env.META_PAGE_ACCESS_TOKEN,
-    metaPageId: env.META_PAGE_ID,
+    metaIgAccessToken: env.META_IG_ACCESS_TOKEN,
     metaIgUserId: env.META_IG_USER_ID,
     metaAppId: env.META_APP_ID,
     metaAppSecret: env.META_APP_SECRET,
@@ -167,6 +202,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     oauthOwnerPassword: env.OAUTH_OWNER_PASSWORD,
     mcpServerAuthToken: env.MCP_SERVER_AUTH_TOKEN,
     logLevel: env.LOG_LEVEL,
+    facebookPage: {
+      enabled: env.ENABLE_FACEBOOK_PAGE_MODULE ?? false,
+      pageAccessToken: env.META_PAGE_ACCESS_TOKEN,
+      pageId: env.META_PAGE_ID,
+    },
     writeActions: {
       enabled: env.ENABLE_WRITE_ACTIONS ?? false,
       allowInstagramPublish: env.ALLOW_INSTAGRAM_PUBLISH ?? false,
@@ -180,9 +220,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
 /** Every secret value that must never appear verbatim in logs or error output. */
 export function secretsOf(config: AppConfig): string[] {
   return [
-    config.metaPageAccessToken,
+    config.metaIgAccessToken,
     config.metaAppSecret,
     config.oauthOwnerPassword,
     config.mcpServerAuthToken,
+    config.facebookPage.pageAccessToken,
   ].filter((v): v is string => Boolean(v));
 }

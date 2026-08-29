@@ -53,8 +53,9 @@ export class GraphApiError extends Error {
       case "token_expired":
         return (
           "Error: The Meta access token has expired or been revoked. " +
-          "Blaise needs to generate a new long-lived Page Access Token " +
-          "(see docs/META_SETUP.md) and update META_PAGE_ACCESS_TOKEN."
+          "Blaise needs to re-run `npm run token:authorize` to generate a new long-lived token " +
+          "(see docs/META_SETUP.md) and update META_IG_ACCESS_TOKEN (or META_PAGE_ACCESS_TOKEN " +
+          "if this was the optional Facebook Page module)."
         );
       case "permission_denied":
         return (

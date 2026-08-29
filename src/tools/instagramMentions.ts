@@ -60,7 +60,7 @@ Returns: A list of tagged media (id, caption, media_type, permalink, timestamp, 
 
 IMPORTANT LIMITATION (this is a Meta API constraint, not a bug): the Graph API has no endpoint that lists every caption/comment @mention historically. Meta only supports resolving a specific @mention once you already know its media or comment ID — in production that ID normally comes from a real-time webhook subscription (out of scope for this read-only v1 server; see docs/TOOLS.md). This tool lists what IS listable (tags) and resolves specific mentions on request.
 
-Requires the instagram_manage_comments permission for comment mentions and instagram_basic for tags/media mentions.`,
+Requires the instagram_business_manage_comments permission for comment mentions and instagram_business_basic for tags/media mentions.`,
       inputSchema: InstagramGetMentionsInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -71,9 +71,9 @@ Requires the instagram_manage_comments permission for comment mentions and insta
     },
     withToolErrorHandling(
       async (params: z.infer<typeof InstagramGetMentionsInputSchema>): Promise<ToolResult> => {
-        const igUserId = await getIgUserId(ctx.client, ctx.config);
+        const igUserId = getIgUserId(ctx.config);
 
-        const tagged = await ctx.client.get<{ data: IgTaggedMedia[] }>(`${igUserId}/tags`, {
+        const tagged = await ctx.igClient.get<{ data: IgTaggedMedia[] }>(`${igUserId}/tags`, {
           fields: "id,caption,media_type,permalink,timestamp,username",
           limit: params.limit,
         });
@@ -84,7 +84,7 @@ Requires the instagram_manage_comments permission for comment mentions and insta
 
         if (params.mentioned_media_id) {
           try {
-            resolvedMediaMention = await ctx.client.get(igUserId, {
+            resolvedMediaMention = await ctx.igClient.get(igUserId, {
               fields: `mentioned_media.media_id(${params.mentioned_media_id}){id,caption,media_type,permalink,timestamp}`,
             });
           } catch (error) {
@@ -96,7 +96,7 @@ Requires the instagram_manage_comments permission for comment mentions and insta
 
         if (params.mentioned_comment_id) {
           try {
-            resolvedCommentMention = await ctx.client.get(igUserId, {
+            resolvedCommentMention = await ctx.igClient.get(igUserId, {
               fields: `mentioned_comment.comment_id(${params.mentioned_comment_id}){id,text,username,timestamp}`,
             });
           } catch (error) {

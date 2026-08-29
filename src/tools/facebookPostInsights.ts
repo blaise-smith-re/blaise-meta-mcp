@@ -21,7 +21,7 @@ export function registerFacebookGetPostInsights(server: McpServer, ctx: ToolCont
     "facebook_get_post_insights",
     {
       title: "Get Facebook Post Insights",
-      description: `Fetch performance insights for one Facebook Page post: impressions, engaged users, clicks, reactions, and video views where currently supported by Meta.
+      description: `OPTIONAL FACEBOOK PAGE MODULE — only registered when ENABLE_FACEBOOK_PAGE_MODULE=true and a real Facebook Page is configured (see docs/META_SETUP.md#facebook-professional-mode). Requires an actual Facebook Page, not a Professional-Mode personal profile. Fetch performance insights for one Facebook Page post: impressions, engaged users, clicks, reactions, and video views where currently supported by Meta.
 
 Args:
   - post_id (string): The Facebook post ID (from facebook_list_posts)
@@ -40,7 +40,7 @@ Requires the pages_read_engagement permission (also pages_read_user_content for 
     },
     withToolErrorHandling(
       async (params: z.infer<typeof FacebookGetPostInsightsInputSchema>): Promise<ToolResult> => {
-        const { data, unavailableMetrics } = await ctx.client.getInsightsWithFallback(
+        const { data, unavailableMetrics } = await ctx.fbClient!.getInsightsWithFallback(
           `${params.post_id}/insights`,
           CANDIDATE_POST_INSIGHTS_METRICS,
         );

@@ -29,7 +29,9 @@ export function registerFacebookGetPage(server: McpServer, ctx: ToolContext): vo
     "facebook_get_page",
     {
       title: "Get Facebook Page",
-      description: `Fetch metadata for the connected Facebook Page: name, username, category, about text, link, and public follower/like counts.
+      description: `OPTIONAL FACEBOOK PAGE MODULE — only registered when ENABLE_FACEBOOK_PAGE_MODULE=true and a real Facebook Page is configured (see docs/META_SETUP.md#facebook-professional-mode). Fetch metadata for that connected Facebook Page: name, username, category, about text, link, and public follower/like counts.
+
+This requires an actual Facebook Page, not a personal profile in Professional Mode — Meta's Graph API has no supported way to read Page-equivalent data from a Professional-Mode personal profile.
 
 Args:
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
@@ -47,7 +49,7 @@ Requires the pages_read_engagement and pages_show_list permissions on the connec
     },
     withToolErrorHandling(
       async (params: z.infer<typeof FacebookGetPageInputSchema>): Promise<ToolResult> => {
-        const page = await ctx.client.get<FbPage>(ctx.config.metaPageId, {
+        const page = await ctx.fbClient!.get<FbPage>(ctx.config.facebookPage.pageId!, {
           fields: "id,name,username,category,about,link,fan_count,followers_count,picture{url}",
         });
 

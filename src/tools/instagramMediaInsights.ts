@@ -29,7 +29,7 @@ Args:
 
 Returns: A metric -> value map for every metric Meta reports as supported for this specific media item, plus a list of any candidate metrics Meta rejected as unsupported (and why) — metric availability varies by media type (Feed/Reels/Carousel) and account, so this tool probes and reports what's actually available rather than assuming a fixed metric set.
 
-Requires the instagram_manage_insights permission. Insights are typically unavailable for media less than ~24 hours old or for Stories after they expire.`,
+Requires the instagram_business_manage_insights permission. Insights are typically unavailable for media less than ~24 hours old or for Stories after they expire.`,
       inputSchema: InstagramGetMediaInsightsInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -40,7 +40,7 @@ Requires the instagram_manage_insights permission. Insights are typically unavai
     },
     withToolErrorHandling(
       async (params: z.infer<typeof InstagramGetMediaInsightsInputSchema>): Promise<ToolResult> => {
-        const { data, unavailableMetrics } = await ctx.client.getInsightsWithFallback(
+        const { data, unavailableMetrics } = await ctx.igClient.getInsightsWithFallback(
           `${params.media_id}/insights`,
           CANDIDATE_MEDIA_INSIGHTS_METRICS,
         );

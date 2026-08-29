@@ -36,7 +36,7 @@ export function registerFacebookListPosts(server: McpServer, ctx: ToolContext): 
     "facebook_list_posts",
     {
       title: "List Facebook Page Posts",
-      description: `List recent posts published to the connected Facebook Page, newest first.
+      description: `OPTIONAL FACEBOOK PAGE MODULE — only registered when ENABLE_FACEBOOK_PAGE_MODULE=true and a real Facebook Page is configured (see docs/META_SETUP.md#facebook-professional-mode). Requires an actual Facebook Page, not a Professional-Mode personal profile. List recent posts published to that connected Facebook Page, newest first.
 
 Args:
   - limit (number): Max posts to return, 1-100 (default: 25)
@@ -56,11 +56,14 @@ Requires the pages_read_engagement permission. Use the returned post id with fac
     },
     withToolErrorHandling(
       async (params: z.infer<typeof FacebookListPostsInputSchema>): Promise<ToolResult> => {
-        const result = await ctx.client.get<FbPostEdge>(`${ctx.config.metaPageId}/posts`, {
-          fields: "id,message,created_time,permalink_url,status_type",
-          limit: params.limit,
-          after: params.after,
-        });
+        const result = await ctx.fbClient!.get<FbPostEdge>(
+          `${ctx.config.facebookPage.pageId}/posts`,
+          {
+            fields: "id,message,created_time,permalink_url,status_type",
+            limit: params.limit,
+            after: params.after,
+          },
+        );
 
         const items = result.data ?? [];
         const structured = {

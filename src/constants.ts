@@ -8,7 +8,22 @@
  */
 export const DEFAULT_GRAPH_API_VERSION = "v26.0";
 
-export const GRAPH_API_BASE_URL = "https://graph.facebook.com";
+/**
+ * Blaise's Instagram Professional account is authorized through "Instagram
+ * API with Instagram Login" (no Facebook Page involved — see
+ * docs/META_SETUP.md for why), so every Instagram data call goes to
+ * graph.instagram.com with an Instagram User Access Token, not
+ * graph.facebook.com with a Page token.
+ */
+export const INSTAGRAM_GRAPH_API_BASE_URL = "https://graph.instagram.com";
+
+/**
+ * Used only by the optional, disabled-by-default Facebook Page module (see
+ * src/tools/facebookPage.ts and ENABLE_FACEBOOK_PAGE_MODULE in config.ts).
+ * Facebook Page data lives on the standard Graph API host and requires an
+ * actual Page + Page Access Token, which Blaise does not currently have.
+ */
+export const FACEBOOK_GRAPH_API_BASE_URL = "https://graph.facebook.com";
 
 /** Hard cap on characters returned in a single tool response, to keep results agent-friendly. */
 export const CHARACTER_LIMIT = 25000;

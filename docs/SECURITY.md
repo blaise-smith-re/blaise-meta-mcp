@@ -2,12 +2,24 @@
 
 ## Threat model
 
-This server holds one credential that matters: a Meta Page Access Token with read access to Blaise's Instagram Professional account and Facebook Page. The goals, in order:
+This server holds one credential that matters: a Meta Instagram User Access Token with read access to Blaise's Instagram Professional account (plus, only if the optional Facebook Page module is enabled, a separate Facebook Page Access Token). The goals, in order:
 
 1. That token is never committed to source control.
 2. That token never appears in full in logs, error messages, or agent-facing tool output.
 3. Nothing this server does can modify, delete, or publish anything on Meta's side, even by accident or a malformed request.
 4. If deployed remotely, only Claude (holding the configured bearer secret) can talk to this server at all.
+
+## Account architecture correction
+
+**This section documents a finding from a follow-up QC pass, and the re-architecture it drove.** An earlier version of this project assumed Blaise's Instagram Professional account was linked to a separate Facebook Page, and built the whole server around "Instagram API with Facebook Login for Business" (a Page Access Token calling `graph.facebook.com`). That assumption was verified to be wrong: Blaise has one personal Facebook profile with Professional Mode enabled, not a Page — his Instagram account is linked to that profile through Accounts Center.
+
+This server was re-architected around **"Instagram API with Instagram Login"** instead, which Meta's own documentation confirms does not require a Facebook Page at all:
+
+- Every Instagram tool now calls `graph.instagram.com` (not `graph.facebook.com`) with an Instagram User Access Token (`META_IG_ACCESS_TOKEN`), obtained via `www.instagram.com/oauth/authorize` → `api.instagram.com/oauth/access_token` → `graph.instagram.com/access_token` (long-lived exchange) — see `scripts/authorize.ts` and [META_SETUP.md](META_SETUP.md).
+- Permissions changed from `instagram_basic`/`instagram_manage_insights`/`instagram_manage_comments` to `instagram_business_basic`/`instagram_business_manage_insights`/`instagram_business_manage_comments` — these `instagram_business_*` names are what the Instagram Login flow actually uses (the earlier version of this doc had this backwards: it associated the `instagram_business_*` names with the Facebook Login flow this server no longer uses).
+- `META_PAGE_ID` and `META_PAGE_ACCESS_TOKEN` are no longer required at all. Meta's Graph API has no supported way to read post/insights data from a personal profile in Professional Mode — Page-level API access has required an actual Page since 2018 — so the three Facebook tools (`facebook_get_page`, `facebook_list_posts`, `facebook_get_post_insights`) are now an **optional module, disabled by default** (`ENABLE_FACEBOOK_PAGE_MODULE`, `src/tools/index.ts`), fully implemented but not registered — Claude cannot see or call them — unless Blaise later creates an actual Page and opts in. See [TOOLS.md](TOOLS.md) and [META_SETUP.md](META_SETUP.md#facebook-professional-mode).
+- `src/meta/client.ts`'s `MetaGraphClient` was generalized to take an explicit `{baseUrl, accessToken, graphApiVersion}` rather than assuming one shared Page token, since the server now legitimately talks to two different Graph API hosts with two different token types (`src/tools/context.ts` carries both as `igClient` and an optional `fbClient`).
+- This correction does not touch Claude-to-server authentication (OAuth 2.1, below) at all — that is a completely separate system, unaffected by which Meta login flow is used underneath.
 
 ## No credentials in the repository
 
@@ -28,7 +40,7 @@ Tool-facing error messages (what Claude actually sees) are built separately in `
 
 ## Least-privilege permission design
 
-- Every V1 permission requested (see [TOOLS.md](TOOLS.md) and [META_SETUP.md](META_SETUP.md)) is read-only in intent: `instagram_basic`, `instagram_manage_insights`, `instagram_manage_comments`, `pages_show_list`, `pages_read_engagement`, `pages_read_user_content`, `business_management`. These are the names for the **Instagram API with Facebook Login for Business** flow this server uses (Instagram account linked to a Page) — Meta separately renamed the equivalent scopes to an `instagram_business_*` prefix (`instagram_business_basic`, etc.) for the _different_, Page-independent **Instagram API with Instagram Login** flow; don't substitute those names here. See [META_SETUP.md](META_SETUP.md#a-note-on-permission-naming) for the reasoning and residual uncertainty. None of these are requested at Advanced Access — this app runs at Standard Access against Blaise's own account, so there's no Meta App Review surface exposed at all in v1.
+- Every V1 permission requested by default (see [TOOLS.md](TOOLS.md) and [META_SETUP.md](META_SETUP.md)) is read-only in intent: `instagram_business_basic`, `instagram_business_manage_insights`, `instagram_business_manage_comments` — the scopes for the **Instagram API with Instagram Login** flow this server uses (no Facebook Page involved; see [Account architecture correction](#account-architecture-correction) above). None of these are requested at Advanced Access — this app runs at Standard Access against Blaise's own account, so there's no Meta App Review surface exposed at all in v1. The optional, disabled-by-default Facebook Page module additionally needs `pages_show_list`, `pages_read_engagement`, `pages_read_user_content` — only relevant if Blaise later enables it against a real Page.
 - No tool constructs a `POST` or `DELETE` request against the Graph API. `MetaGraphClient.request()` (`src/meta/client.ts`) defaults to `GET`; nothing in `src/tools/` passes a different method.
 - The centralized client is the _only_ place that builds a Graph API URL or attaches the access token (as an `Authorization: Bearer` header, never as a URL query parameter, so it can't end up in server access logs or browser history). No tool file talks to `fetch` directly.
 
@@ -99,7 +111,7 @@ The task this server exists for explicitly rules out write actions in v1: publis
 3. **No implementation to fall back on.** Even if both flags were somehow set today, every stub handler returns "not implemented" rather than attempting a real Graph API write — there is no publish/reply/message code path in this version at all, so there's nothing to accidentally trigger.
 4. **Tested.** `tests/writeGuard.test.ts` verifies all of the above: disabled by default, requires both flags, and per-action flags don't cross-enable each other.
 
-When a future version implements real write actions, it should additionally require: `instagram_content_publish` and/or `pages_manage_posts` permissions (which **do** require Meta App Review + Advanced Access, since publishing is a higher-risk capability class than reading), explicit human confirmation before any publish/reply/message actually fires, and its own security review — this document should be revisited at that point.
+When a future version implements real write actions, it should additionally require: `instagram_business_content_publish` and/or (for the optional Facebook Page module) `pages_manage_posts` permissions (which **do** require Meta App Review + Advanced Access, since publishing is a higher-risk capability class than reading), explicit human confirmation before any publish/reply/message actually fires, and its own security review — this document should be revisited at that point.
 
 ## Things this server will never do (out of scope, not just disabled)
 
@@ -112,4 +124,4 @@ When a future version implements real write actions, it should additionally requ
 
 ## Token expiry
 
-Page Access Tokens obtained via the flow in [META_SETUP.md](META_SETUP.md) last ~60 days. This server does not store the App Secret or auto-refresh the token — that would mean a running, potentially remote, process holding the one credential capable of minting new tokens, which is a materially larger blast radius than a read-only Page token that simply expires on its own. Refreshing is a deliberate, occasional, local action (`npm run token:authorize`), not something left running unattended.
+Instagram User Access Tokens obtained via the flow in [META_SETUP.md](META_SETUP.md) last ~60 days. This server does not store the App Secret or auto-refresh the token — that would mean a running, potentially remote, process holding the one credential capable of minting new tokens, which is a materially larger blast radius than a read-only token that simply expires on its own. Refreshing is a deliberate, occasional, local action (`npm run token:authorize`), not something left running unattended. If the optional Facebook Page module is ever enabled, its Page Access Token follows the same policy.

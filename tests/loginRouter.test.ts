@@ -8,8 +8,8 @@ import { SingleUserOAuthProvider } from "../src/oauth/provider.js";
 import { createLoginRouter } from "../src/oauth/loginRouter.js";
 
 const config = loadConfig({
-  META_PAGE_ACCESS_TOKEN: "A".repeat(40),
-  META_PAGE_ID: "123",
+  META_IG_ACCESS_TOKEN: "A".repeat(40),
+  META_IG_USER_ID: "123",
   TRANSPORT: "http",
   PUBLIC_URL: "https://mcp.example.com",
   OAUTH_OWNER_PASSWORD: "the-owner-password-123",

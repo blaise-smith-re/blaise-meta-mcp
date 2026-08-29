@@ -1,6 +1,6 @@
 # Blaise Meta MCP
 
-A private remote [MCP](https://modelcontextprotocol.io) server that lets Claude securely read data from **Blaise Smith's Instagram Professional account and Facebook Page** (Buy Sell Home Team | RE/MAX Results) — through Meta's official Graph API only.
+A private remote [MCP](https://modelcontextprotocol.io) server that lets Claude securely read data from **Blaise Smith's Instagram Professional account** (Buy Sell Home Team | RE/MAX Results) — through Meta's official Graph API only. Blaise's Instagram account is linked to his personal Facebook profile (Professional Mode), not a separate Facebook Page, so this server authenticates through "Instagram API with Instagram Login" — no Facebook Page is required. (A Facebook Page tools module exists but is disabled by default; see below.)
 
 This is v1: **read-only**. Claude can look up profile info, recent posts/Reels, comments, and performance insights. It cannot post, publish, delete, or message anyone. See [docs/SECURITY.md](docs/SECURITY.md) for why, and what a future write-enabled version would require.
 
@@ -11,29 +11,28 @@ You do not need to know how to code to set this up — follow the steps below in
 Claude talks to this server using the Model Context Protocol. This server talks to Meta's Graph API using a token you generate once. Nothing runs "automatically" — every tool call happens because Claude, on your behalf, asked a specific question (e.g. "what are my last 5 Instagram posts?").
 
 ```
-Claude  <--MCP-->  this server  <--Graph API-->  Meta (Instagram + Facebook)
+Claude  <--MCP-->  this server  <--Graph API-->  Meta (Instagram)
 ```
 
 ## What you get in v1
 
-| Tool                             | What it does                                                    |
-| -------------------------------- | --------------------------------------------------------------- |
-| `meta_get_account`               | Identify the connected Facebook Page + linked Instagram account |
-| `instagram_get_profile`          | Instagram profile info and follower/media counts                |
-| `instagram_list_media`           | Recent Instagram posts, Reels, carousels                        |
-| `instagram_get_media_insights`   | Reach, views, saves, shares, etc. for one post                  |
-| `instagram_get_account_insights` | Account-level reach, profile views, engaged accounts            |
-| `instagram_list_comments`        | Comments on a specific Instagram post                           |
-| `instagram_get_mentions`         | Instagram tags, and specific @mention lookups                   |
-| `facebook_get_page`              | Facebook Page info                                              |
-| `facebook_list_posts`            | Recent Facebook Page posts                                      |
-| `facebook_get_post_insights`     | Performance metrics for one Facebook post                       |
+| Tool                             | What it does                                            |
+| -------------------------------- | ------------------------------------------------------- |
+| `meta_get_account`               | Identify the connected Instagram account                |
+| `instagram_get_profile`          | Instagram profile info and follower/media counts        |
+| `instagram_list_media`           | Recent Instagram posts, Reels, carousels                |
+| `instagram_get_media_insights`   | Reach, views, saves, shares, etc. for one post          |
+| `instagram_get_account_insights` | Account-level reach, profile activity, engaged accounts |
+| `instagram_list_comments`        | Comments on a specific Instagram post                   |
+| `instagram_get_mentions`         | Instagram tags, and specific @mention lookups           |
+
+Plus an **optional, disabled-by-default Facebook Page module** (`facebook_get_page`, `facebook_list_posts`, `facebook_get_post_insights`) for if Blaise ever creates and connects an actual Facebook Page — see [docs/META_SETUP.md#facebook-professional-mode](docs/META_SETUP.md#facebook-professional-mode) for why it's off by default (Meta's API doesn't support reading a Professional-Mode personal profile the way it supports a Page).
 
 Full detail on inputs/outputs/permissions for each: [docs/TOOLS.md](docs/TOOLS.md).
 
 ## Setup, in order
 
-1. **Create and configure the Meta app.** Follow [docs/META_SETUP.md](docs/META_SETUP.md) end to end — it's a screen-by-screen walkthrough for someone who has never used the Meta Developer Dashboard. You'll end up with an App ID, an App Secret, and (via the helper script below) a long-lived Page Access Token.
+1. **Create and configure the Meta app.** Follow [docs/META_SETUP.md](docs/META_SETUP.md) end to end — it's a screen-by-screen walkthrough for someone who has never used the Meta Developer Dashboard. You'll end up with an App ID, an App Secret, and (via the helper script below) a long-lived Instagram User Access Token. No Facebook Page is needed.
 2. **Install Node.js.** Get the LTS version from [nodejs.org](https://nodejs.org) if you don't already have it (version 20 or newer).
 3. **Install this project's dependencies.** In a terminal, from this folder:
    ```
@@ -48,7 +47,7 @@ Full detail on inputs/outputs/permissions for each: [docs/TOOLS.md](docs/TOOLS.m
    ```
    npm run token:authorize
    ```
-   This opens a one-time authorization flow (instructions print in the terminal) and prints the `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID` values to paste into `.env`. Full detail in [docs/META_SETUP.md](docs/META_SETUP.md#getting-your-access-token).
+   This opens a one-time authorization flow (instructions print in the terminal) and prints the `META_IG_ACCESS_TOKEN` and `META_IG_USER_ID` values to paste into `.env`. Full detail in [docs/META_SETUP.md](docs/META_SETUP.md#getting-your-access-token).
 6. **Verify it works locally.**
    ```
    npm run build
@@ -61,7 +60,7 @@ Full detail on inputs/outputs/permissions for each: [docs/TOOLS.md](docs/TOOLS.m
 
 ## Keeping the token working
 
-The Page Access Token expires roughly every 60 days. Re-run `npm run token:authorize` before it does (Meta will start returning "token expired" errors from any tool once it lapses — see [docs/SECURITY.md](docs/SECURITY.md#token-expiry)). There's nothing to "renew" inside Claude — it's a one-time terminal command on your machine.
+The Instagram User Access Token expires roughly every 60 days. Re-run `npm run token:authorize` before it does (Meta will start returning "token expired" errors from any tool once it lapses — see [docs/SECURITY.md](docs/SECURITY.md#token-expiry)). There's nothing to "renew" inside Claude — it's a one-time terminal command on your machine.
 
 ## Project layout
 
@@ -76,7 +75,7 @@ src/
   meta/
     client.ts            the one place that calls the Graph API
     errors.ts             typed Graph API error handling
-    account.ts             resolves the connected Page + Instagram account
+    account.ts             the configured Instagram Business Account ID
     writeGuard.ts           gate for the (disabled) future write layer
   oauth/                  this server's own OAuth 2.1 auth server, for
                           Claude's connector auth (see docs/SECURITY.md)

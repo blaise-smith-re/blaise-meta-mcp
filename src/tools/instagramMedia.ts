@@ -49,7 +49,7 @@ Args:
 
 Returns: For each media item — id, caption, media_type ('IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM'), media_product_type ('FEED' | 'REELS' | 'STORY'), timestamp, permalink, like_count, comments_count. Includes has_more and next_cursor for pagination.
 
-Requires the instagram_basic permission. Use the returned media id with instagram_get_media_insights or instagram_list_comments.`,
+Requires the instagram_business_basic permission. Use the returned media id with instagram_get_media_insights or instagram_list_comments.`,
       inputSchema: InstagramListMediaInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -60,8 +60,8 @@ Requires the instagram_basic permission. Use the returned media id with instagra
     },
     withToolErrorHandling(
       async (params: z.infer<typeof InstagramListMediaInputSchema>): Promise<ToolResult> => {
-        const igUserId = await getIgUserId(ctx.client, ctx.config);
-        const result = await ctx.client.get<IgMediaEdge>(`${igUserId}/media`, {
+        const igUserId = getIgUserId(ctx.config);
+        const result = await ctx.igClient.get<IgMediaEdge>(`${igUserId}/media`, {
           fields:
             "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count",
           limit: params.limit,

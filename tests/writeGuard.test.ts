@@ -3,8 +3,8 @@ import { loadConfig } from "../src/config.js";
 import { assertWriteActionAllowed, WriteActionsDisabledError } from "../src/meta/writeGuard.js";
 
 const baseEnv = {
-  META_PAGE_ACCESS_TOKEN: "A".repeat(40),
-  META_PAGE_ID: "123",
+  META_IG_ACCESS_TOKEN: "A".repeat(40),
+  META_IG_USER_ID: "123",
 };
 
 describe("assertWriteActionAllowed", () => {

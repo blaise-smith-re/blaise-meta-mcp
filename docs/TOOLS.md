@@ -2,7 +2,7 @@
 
 Every tool in this server is **read-only** (see [SECURITY.md](SECURITY.md) for why, and what's architected-but-disabled for later). Every tool accepts an optional `response_format` (`"markdown"` or `"json"`, default `"markdown"`) and returns both a human-readable text block and, for programmatic use, `structuredContent`.
 
-All Instagram tools operate on the one Instagram Professional account linked to the Facebook Page configured via `META_PAGE_ID` — there's no multi-account switching in v1.
+All Instagram tools operate on the one Instagram Professional account configured via `META_IG_USER_ID`, authorized through "Instagram API with Instagram Login" — there is no Facebook Page involved and no multi-account switching in v1. The three `facebook_*` tools are a separate, **optional, disabled-by-default module** — see their entries below and [SECURITY.md](SECURITY.md#account-architecture-correction).
 
 Insights tools (`instagram_get_media_insights`, `instagram_get_account_insights`, `facebook_get_post_insights`) work differently from the others: instead of assuming a fixed metric list, each one requests a candidate set of metrics and, if Meta rejects any as unsupported for that specific object, falls back to fetching each metric individually. The response always includes both what succeeded (`metrics`) and what didn't (`unavailable_metrics`, with Meta's stated reason) — metric availability genuinely varies by media type, account, and Graph API version, and Meta deprecates/renames metrics over time, so a fixed hardcoded list would silently go stale.
 
@@ -10,11 +10,11 @@ Insights tools (`instagram_get_media_insights`, `instagram_get_account_insights`
 
 ## `meta_get_account`
 
-Identifies the connected Facebook Page and its linked Instagram Professional account. Call this first to confirm what Claude is connected to.
+Identifies Blaise's Instagram Professional account, and a Facebook Page only if the optional Facebook Page module is enabled. Call this first to confirm what Claude is connected to.
 
 - **Input**: `response_format`
-- **Output**: Page `id`/`name`/`username`/`category`; Instagram `id`/`username`/`name` (if linked)
-- **Permissions**: `pages_show_list`, `instagram_basic`
+- **Output**: Instagram `id`/`username`/`name`/`account_type`; `facebook_page` is `null` unless `ENABLE_FACEBOOK_PAGE_MODULE=true` and configured
+- **Permissions**: `instagram_business_basic`
 
 ## `instagram_get_profile`
 
@@ -22,7 +22,7 @@ Profile metadata for the connected Instagram account.
 
 - **Input**: `response_format`
 - **Output**: `id`, `username`, `name`, `biography`, `website`, `followers_count`, `follows_count`, `media_count`, `account_type`, `profile_picture_url`
-- **Permissions**: `instagram_basic`
+- **Permissions**: `instagram_business_basic`
 - **Notes**: Meta may omit some fields depending on account type/privacy — this tool reports whatever comes back rather than assuming every field is present.
 
 ## `instagram_list_media`
@@ -31,7 +31,7 @@ Recent Instagram posts, Reels, and carousels, newest first.
 
 - **Input**: `limit` (1–100, default 25), `after` (pagination cursor), `response_format`
 - **Output**: Per item — `id`, `caption`, `media_type`, `media_product_type`, `timestamp`, `permalink`, `like_count`, `comments_count`. Plus `has_more`/`next_cursor`.
-- **Permissions**: `instagram_basic`
+- **Permissions**: `instagram_business_basic`
 - **Use with**: feed `id` into `instagram_get_media_insights` or `instagram_list_comments`.
 
 ## `instagram_get_media_insights`
@@ -40,7 +40,7 @@ Performance metrics for one media item.
 
 - **Input**: `media_id` (required), `response_format`
 - **Output**: `metrics` (metric name → value, whatever Meta confirms is supported for this item — e.g. `reach`, `likes`, `comments`, `saved`, `shares`, `total_interactions`, `views`, `profile_activity`), `unavailable_metrics` (name + reason)
-- **Permissions**: `instagram_manage_insights`
+- **Permissions**: `instagram_business_manage_insights`
 - **Notes**: Insights are commonly unavailable for media under ~24 hours old, or for expired Stories. Which metrics apply also depends on `media_product_type` (Feed vs. Reels vs. Carousel) — that's exactly why this tool probes rather than assuming.
 
 ## `instagram_get_account_insights`
@@ -49,7 +49,7 @@ Account-level reach, profile activity, and audience metrics.
 
 - **Input**: `period` (`day` | `week` | `days_28`, default `day`), `response_format`
 - **Output**: `metrics` (e.g. `reach`, `views`, `profile_activity`, `accounts_engaged`, `total_interactions`, `follower_count`, `online_followers`, `get_directions_clicks`), `unavailable_metrics`
-- **Permissions**: `instagram_manage_insights`
+- **Permissions**: `instagram_business_manage_insights`
 - **Notes**: Some audience/demographic metrics require a minimum follower count (historically 100) — those show up under `unavailable_metrics` if the account doesn't qualify. Meta's account-insights metric set changes relatively often — as of this writing, `profile_views`, `website_clicks`, `phone_call_clicks`, `text_message_clicks`, and standalone `email_contacts` are deprecated (retired January 2025) in favor of the `profile_activity` breakdown and `views`; check `unavailable_metrics` rather than assuming any specific metric exists.
 
 ## `instagram_list_comments`
@@ -58,7 +58,7 @@ Comments left on one Instagram media item.
 
 - **Input**: `media_id` (required), `limit` (1–100, default 25), `after`, `response_format`
 - **Output**: Per comment — `id`, `text`, `username`, `timestamp`, `like_count`. Plus `has_more`/`next_cursor`.
-- **Permissions**: `instagram_manage_comments` (Meta has no separate read-only comment scope)
+- **Permissions**: `instagram_business_manage_comments` (Meta has no separate read-only comment scope)
 - **Notes**: Read-only. Never posts, hides, or deletes a comment.
 
 ## `instagram_get_mentions`
@@ -67,33 +67,22 @@ Lists media where the account was tagged, and can resolve a specific @mention if
 
 - **Input**: `limit` (tagged-media list size), `mentioned_media_id` (optional), `mentioned_comment_id` (optional), `response_format`
 - **Output**: `tagged_media` (list, from `GET /{ig-user-id}/tags`), plus `resolved_media_mention` / `resolved_comment_mention` if the corresponding ID was passed
-- **Permissions**: `instagram_basic` (tags), `instagram_manage_comments` (comment mentions)
+- **Permissions**: `instagram_business_basic` (tags), `instagram_business_manage_comments` (comment mentions)
 - **Known Meta API limitation**: there is no Graph API endpoint that lists every @mention in a caption or comment historically — Meta only supports resolving one once you already know its media/comment ID, which in a full production setup normally comes from a real-time webhook subscription. Webhooks are out of scope for this read-only v1 (they require a public HTTPS endpoint and a review step of their own). This tool exposes what genuinely is listable (tags) and the specific-ID lookup, and says so plainly rather than pretending to offer a full mentions feed.
 
-## `facebook_get_page`
+## `facebook_get_page`, `facebook_list_posts`, `facebook_get_post_insights` — OPTIONAL MODULE, disabled by default
 
-Facebook Page metadata.
+**Blaise does not currently have a Facebook Page** — he has a personal Facebook profile in Professional Mode, and Meta's Graph API has no supported way to read Page-equivalent data (posts, insights) from a Professional-Mode profile; Page-level access has required an actual Page since 2018. See [META_SETUP.md](META_SETUP.md#facebook-professional-mode) for the full explanation.
 
-- **Input**: `response_format`
-- **Output**: `id`, `name`, `username`, `category`, `about`, `link`, `fan_count`, `followers_count`, `picture`
-- **Permissions**: `pages_read_engagement`, `pages_show_list`
+These three tools are fully implemented but **not registered** — Claude cannot see or call them — unless `ENABLE_FACEBOOK_PAGE_MODULE=true` is set along with `META_PAGE_ACCESS_TOKEN` and `META_PAGE_ID` (see `.env.example`). That combination only makes sense if Blaise creates and connects an actual Facebook Page in the future.
 
-## `facebook_list_posts`
+If enabled:
 
-Recent Facebook Page posts, newest first.
+- **`facebook_get_page`** — Facebook Page metadata (`id`, `name`, `username`, `category`, `about`, `link`, `fan_count`, `followers_count`, `picture`). Requires `pages_read_engagement`, `pages_show_list`.
+- **`facebook_list_posts`** — Recent Facebook Page posts, newest first (`id`, `message`, `created_time`, `permalink_url`, `status_type`, pagination). Requires `pages_read_engagement`.
+- **`facebook_get_post_insights`** — Performance metrics for one Facebook Page post (e.g. `post_impressions`, `post_impressions_unique`, `post_engaged_users`, `post_clicks`, `post_reactions_by_type_total`, `post_video_views`), with the same dynamic `unavailable_metrics` handling as the Instagram insights tools. Requires `pages_read_engagement`, `pages_read_user_content`. Facebook Page Insights metrics are deprecated/replaced by Meta more often than most Graph API surfaces — check `unavailable_metrics` rather than assuming a metric exists.
 
-- **Input**: `limit` (1–100, default 25), `after`, `response_format`
-- **Output**: Per post — `id`, `message`, `created_time`, `permalink_url`, `status_type`. Plus `has_more`/`next_cursor`.
-- **Permissions**: `pages_read_engagement`
-
-## `facebook_get_post_insights`
-
-Performance metrics for one Facebook Page post.
-
-- **Input**: `post_id` (required), `response_format`
-- **Output**: `metrics` (e.g. `post_impressions`, `post_impressions_unique`, `post_engaged_users`, `post_clicks`, `post_reactions_by_type_total`, `post_video_views`), `unavailable_metrics`
-- **Permissions**: `pages_read_engagement`, `pages_read_user_content`
-- **Notes**: Facebook Page Insights metrics are deprecated/replaced by Meta more often than most Graph API surfaces — check `unavailable_metrics` rather than assuming a metric exists.
+None of the Instagram tools above depend on this module in any way.
 
 ---
 

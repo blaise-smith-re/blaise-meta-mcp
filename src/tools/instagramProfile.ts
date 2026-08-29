@@ -38,7 +38,7 @@ Args:
 
 Returns: id, username, name, biography, website, followers_count, follows_count, media_count, account_type ('BUSINESS' or 'MEDIA_CREATOR'), profile_picture_url.
 
-Requires the instagram_basic permission on the connected token. Some fields (e.g. follows_count) may be omitted by Meta depending on account privacy/type — this tool reports whatever the API returns rather than assuming every field is present.`,
+Requires the instagram_business_basic permission on the connected token. Some fields (e.g. follows_count) may be omitted by Meta depending on account privacy/type — this tool reports whatever the API returns rather than assuming every field is present.`,
       inputSchema: InstagramGetProfileInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -49,8 +49,8 @@ Requires the instagram_basic permission on the connected token. Some fields (e.g
     },
     withToolErrorHandling(
       async (params: z.infer<typeof InstagramGetProfileInputSchema>): Promise<ToolResult> => {
-        const igUserId = await getIgUserId(ctx.client, ctx.config);
-        const profile = await ctx.client.get<IgProfile>(igUserId, {
+        const igUserId = getIgUserId(ctx.config);
+        const profile = await ctx.igClient.get<IgProfile>(igUserId, {
           fields:
             "id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url,account_type",
         });

@@ -47,7 +47,7 @@ Args:
 
 Returns: For each comment — id, text, username, timestamp, like_count. Includes has_more and next_cursor for pagination.
 
-Requires the instagram_manage_comments permission (Meta does not offer a read-only comment-listing scope separate from manage). This tool only reads comments — it never posts, hides, or deletes any (see docs/SECURITY.md for the disabled write layer).`,
+Requires the instagram_business_manage_comments permission (Meta does not offer a read-only comment-listing scope separate from manage). This tool only reads comments — it never posts, hides, or deletes any (see docs/SECURITY.md for the disabled write layer).`,
       inputSchema: InstagramListCommentsInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -58,7 +58,7 @@ Requires the instagram_manage_comments permission (Meta does not offer a read-on
     },
     withToolErrorHandling(
       async (params: z.infer<typeof InstagramListCommentsInputSchema>): Promise<ToolResult> => {
-        const result = await ctx.client.get<IgCommentEdge>(`${params.media_id}/comments`, {
+        const result = await ctx.igClient.get<IgCommentEdge>(`${params.media_id}/comments`, {
           fields: "id,text,username,timestamp,like_count",
           limit: params.limit,
           after: params.after,

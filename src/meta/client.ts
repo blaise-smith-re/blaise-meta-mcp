@@ -1,12 +1,17 @@
-import type { AppConfig } from "../config.js";
-import { GRAPH_API_BASE_URL } from "../constants.js";
 import { logger } from "../logger.js";
 import { GraphApiError, type GraphApiErrorPayload } from "./errors.js";
+
+export interface MetaGraphClientOptions {
+  /** e.g. https://graph.instagram.com or https://graph.facebook.com */
+  baseUrl: string;
+  accessToken: string;
+  graphApiVersion: string;
+}
 
 export interface GraphRequestOptions {
   method?: "GET" | "POST" | "DELETE";
   query?: Record<string, string | number | boolean | undefined>;
-  /** Overrides config.metaPageAccessToken for this single call (rarely needed). */
+  /** Overrides the configured access token for this single call (rarely needed). */
   accessToken?: string;
 }
 
@@ -15,13 +20,24 @@ export interface GraphRequestOptions {
  * makes. Nothing outside this file constructs a Graph API URL or reads the
  * access token — that keeps auth, versioning, and error handling in one
  * place instead of duplicated per tool.
+ *
+ * A single instance is bound to one base URL and one token, since this
+ * server talks to two genuinely different Graph API surfaces depending on
+ * account architecture: graph.instagram.com with an Instagram User Access
+ * Token for Blaise's Instagram Professional account (the default, no
+ * Facebook Page involved), and — only if the optional Facebook Page module
+ * is enabled — graph.facebook.com with a Page Access Token. See
+ * docs/META_SETUP.md for why these are different flows with different
+ * hosts and tokens, not just a parameter.
  */
 export class MetaGraphClient {
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly options: MetaGraphClientOptions) {}
 
   private buildUrl(path: string, query: GraphRequestOptions["query"]): URL {
     const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-    const url = new URL(`${GRAPH_API_BASE_URL}/${this.config.graphApiVersion}/${normalizedPath}`);
+    const url = new URL(
+      `${this.options.baseUrl}/${this.options.graphApiVersion}/${normalizedPath}`,
+    );
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
@@ -30,7 +46,7 @@ export class MetaGraphClient {
 
   async request<T>(path: string, options: GraphRequestOptions = {}): Promise<T> {
     const { method = "GET", query } = options;
-    const accessToken = options.accessToken ?? this.config.metaPageAccessToken;
+    const accessToken = options.accessToken ?? this.options.accessToken;
     const url = this.buildUrl(path, query);
 
     logger.debug(`Graph API ${method} ${url.pathname}`, { query });

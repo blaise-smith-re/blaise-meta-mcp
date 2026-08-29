@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MetaGraphClient } from "../src/meta/client.js";
+import { MetaGraphClient, type MetaGraphClientOptions } from "../src/meta/client.js";
 import { GraphApiError } from "../src/meta/errors.js";
-import { loadConfig } from "../src/config.js";
 import {
   expiredTokenError,
   jsonResponse,
@@ -11,10 +10,11 @@ import {
   unsupportedMetricError,
 } from "./mocks/graphApiFixtures.js";
 
-const config = loadConfig({
-  META_PAGE_ACCESS_TOKEN: "A".repeat(40),
-  META_PAGE_ID: "123",
-} as NodeJS.ProcessEnv);
+const clientOptions: MetaGraphClientOptions = {
+  baseUrl: "https://graph.instagram.com",
+  accessToken: "A".repeat(40),
+  graphApiVersion: "v26.0",
+};
 
 describe("MetaGraphClient error handling", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -30,55 +30,55 @@ describe("MetaGraphClient error handling", () => {
 
   it("throws GraphApiError categorized as token_expired for code 190", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(expiredTokenError, 401));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await expect(client.get("me")).rejects.toMatchObject({ category: "token_expired" });
   });
 
   it("throws GraphApiError categorized as permission_denied for code 10", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(permissionError, 403));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await expect(client.get("me")).rejects.toMatchObject({ category: "permission_denied" });
   });
 
   it("throws GraphApiError categorized as rate_limited for code 4", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(rateLimitError, 400));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await expect(client.get("me")).rejects.toMatchObject({ category: "rate_limited" });
   });
 
   it("throws GraphApiError categorized as not_found for HTTP 404", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(notFoundError, 404));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await expect(client.get("me")).rejects.toMatchObject({ category: "not_found" });
   });
 
   it("agent-facing messages never include the raw access token", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(expiredTokenError, 401));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     try {
       await client.get("me");
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(GraphApiError);
       const message = (error as GraphApiError).toAgentMessage();
-      expect(message).not.toContain(config.metaPageAccessToken);
+      expect(message).not.toContain(clientOptions.accessToken);
     }
   });
 
   it("sends the access token as a Bearer header, never as a URL query param", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: "1" }));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await client.get("me");
     const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
-    expect(url.toString()).not.toContain(config.metaPageAccessToken);
+    expect(url.toString()).not.toContain(clientOptions.accessToken);
     expect((init.headers as Record<string, string>).Authorization).toBe(
-      `Bearer ${config.metaPageAccessToken}`,
+      `Bearer ${clientOptions.accessToken}`,
     );
   });
 
   it("wraps a network failure in a plain Error instead of leaking the raw fetch error", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await expect(client.get("me")).rejects.toThrow(/Network error calling Meta Graph API/);
   });
 });
@@ -104,7 +104,7 @@ describe("MetaGraphClient.getInsightsWithFallback", () => {
         ],
       }),
     );
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     const result = await client.getInsightsWithFallback("media123/insights", ["reach", "likes"]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.data).toHaveLength(2);
@@ -117,7 +117,7 @@ describe("MetaGraphClient.getInsightsWithFallback", () => {
       .mockResolvedValueOnce(jsonResponse({ data: [{ name: "reach", values: [{ value: 100 }] }] })) // reach ok
       .mockResolvedValueOnce(jsonResponse(unsupportedMetricError, 400)); // profile_activity rejected
 
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     const result = await client.getInsightsWithFallback("media123/insights", [
       "reach",
       "profile_activity",
@@ -132,7 +132,7 @@ describe("MetaGraphClient.getInsightsWithFallback", () => {
 
   it("propagates a non-metric error (e.g. expired token) without falling back", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(expiredTokenError, 401));
-    const client = new MetaGraphClient(config);
+    const client = new MetaGraphClient(clientOptions);
     await expect(
       client.getInsightsWithFallback("media123/insights", ["reach", "likes"]),
     ).rejects.toMatchObject({ category: "token_expired" });

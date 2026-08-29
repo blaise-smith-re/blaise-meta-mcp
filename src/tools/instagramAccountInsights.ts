@@ -33,7 +33,7 @@ Args:
 
 Returns: A metric -> value map for every account-level metric Meta reports as supported, plus a list of any candidate metrics Meta rejected as unsupported (and why). Account-level insights availability and required permissions change more often than most Graph API surfaces, so this tool probes rather than assuming a fixed metric set.
 
-Requires the instagram_manage_insights permission. Meta requires a minimum follower count (historically 100) for some audience-demographics metrics — those will show up under unavailable_metrics if the account doesn't qualify.`,
+Requires the instagram_business_manage_insights permission. Meta requires a minimum follower count (historically 100) for some audience-demographics metrics — those will show up under unavailable_metrics if the account doesn't qualify.`,
       inputSchema: InstagramGetAccountInsightsInputSchema.shape,
       annotations: {
         readOnlyHint: true,
@@ -46,8 +46,8 @@ Requires the instagram_manage_insights permission. Meta requires a minimum follo
       async (
         params: z.infer<typeof InstagramGetAccountInsightsInputSchema>,
       ): Promise<ToolResult> => {
-        const igUserId = await getIgUserId(ctx.client, ctx.config);
-        const { data, unavailableMetrics } = await ctx.client.getInsightsWithFallback(
+        const igUserId = getIgUserId(ctx.config);
+        const { data, unavailableMetrics } = await ctx.igClient.getInsightsWithFallback(
           `${igUserId}/insights`,
           CANDIDATE_ACCOUNT_INSIGHTS_METRICS,
           { period: params.period, metric_type: "total_value" },
